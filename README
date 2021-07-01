@@ -1,0 +1,194 @@
+============================================================================
+Release note June 30 2021
+
+Bugs in the calculation of average intensity is fixed for pmapsr .
+============================================================================
+
+----------------------------------------------------------------------------
+maps programs for GeF-seq analysis
+----------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+We made a significant modification for the Gef-seq analysis recently, 
+Please check out the link including the latest releases. 
+June 2017.
+------------------------------------------------------------------------------
+
+-------------------------------------------------
+MAC OSX Mountain Lion Version
+-------------------------------------------------
+
+
+There are three binary files of maps programs (mkindex, mpsmap, pmapsr) compiled for MacOSX 10.7.5 (Mountain Lion). 
+Change mode to make them executable, if necessary. 
+% chmod +x mkindex 
+% chmod +x mpsmap 
+% chmod +x pmapsr 
+You may also need to set path to this directory, if you carry out data analysis somewhere else.
+
+
+------------------------------------------------------
+Brief introduction to a GeF-seq analysis: 
+------------------------------------------------------
+
+Following is an example of a GeF-seq analysis. 
+
+1. Preparation: 
+
+Suppose you have three data files for analysis. 
+1. Genome sequence file in fasta format (genome.fasta). 
+2. Genome sequencing data file by Illumina sequencer in fastq format (genome_seq.fastq). 
+3. GeF-seq sequencing data file by Illumina sequencer in fastq format (gef_seq.fastq). 
+Read length of about 75 base pairs is assumed.
+
+First, create an index file for reference genome. 
+% ./mkindex -11 genome.fasta
+The option -11 specifies the length of the index as 11.
+This will create an index file genome.fasta.indx11
+
+
+2. Genome-seq mapping: 
+
+Then map genome-seq reads to the reference. 
+% mpsmap -i 11 -a 8 -r 36 -h 35 -job r36h35i11 genome.fasta genome_seq.fastq
+The options -i, -a, -r, -h, and -job specifies the index length, number of processors/thread used for calculation,
+iteration cycle, maximum number of mismatch per read, and jobname, respectively.
+Job name can be any string to specify the job. We usually use iteration cycle, mismatch allowance, and index length as the job name.
+The second last and the last arguments are the genome sequence file and the genome sequencing data file, respectively.
+This will create several output files including genome_seq.fastq_r36h35i11.bhit (hit position file:binary),
+genome_seq.fastq_r36h35i11.hit (hit position file:text). 
+
+
+3. ORI-TER bias estimation: 
+
+To estimate the population bias between ORI and TER positions, issue the following command.
+% pmapsr -job r36h35i11 -pek 10 -sr 2 -primer -np genome.fasta genome_seq.fastq
+By specifying the same job name as the previous command, it will read the .hit file created by the previous command.
+The -np option omits the output of postscript file, that saves some computational time and disk space.
+The -sr option filters out reads with more than 2 mismatches to reference.
+The option -pek specifies the width of genome sequence (the specified valu x 1,000) to calculate the population. 
+For instance, by specifying -pek 10, it will calculate the population of every 10,000 bp on genome. 
+Now, the population histogram file genome_seq.fastq_r36h35i11.pek should be created.
+The file is a text file with (genome length / 10,000) lines, which looks like following.
+
+==================================
+=== genome_seq.fastq_r36h35i11.pek ===
+==================================
+       0    10000  2127237
+ .........................
+ 2080000  2090000   412411
+ ..........................
+ 3950000  3960000  2226115
+==================================
+
+The first and second columns indicate the initial and final position of the genome region.
+The last column shows the total population of the mapped read in the region.
+By plotting the population value on the genome and assuming the ORI and TER positions,
+one can calculate the approximate slope of the population bias between ORI and TER.
+In the following example we assume the slope as 0.1938 with ORI position of 0, and TER position of 2018418 for Bacillus subtilis genome.
+
+
+4. Obtaining depth map: 
+
+The following analysis of GeF-seq data expect the use of "IMC (in silico MolecularCloning)" software available from in silico biology, inc..
+Our maps suite programs output data that can be read in by IMC for graphical analysis.
+
+To obtain the genome mapping result as depth count on each genome positions, issue the following command. 
+% pmapsr -job r36h35i11 -peb 1 -primer -sr 2 -pfs 100000 -pbo 0 -pbt 2018418 -pbs 0.23419 genome.fasta genome_seq.fastq 
+The options -pbo -pbt -pbs specifies the parameters for ORI-TER bias.
+The -pbo value specifies the ori position.
+The -pbt value specifies the ter position.
+The -pbs value specifies the slope for the ORI-TER bias.
+The -peb option generates the following two files that can be read in from IMC program. 
+The -primer option is for the reads with primer sequence which should be removed for depth counting.
+This option is not necessary if regular genome sequencing is carried out.
+The -sr 2 option removes the reads with more than 2 mismatches excluding the primer region.
+IMC software may not work with data too large.
+In such a case, user can split the output file into files with specified length by using the -pfs option.
+Here we specify the file size as 100,000, so we obtain 43 files for Bacillus subtilis.
+
+============================================
+=== genome_seq.fastq_r36h35i11_match_001.peb === 
+============================================
+0,0,+,0
+1,1,+,150
+2,2,+,160
+3,3,+,200
+4,4,+,180
+........
+........
+99996,99996,+,-1
+99997,99997,+,-1
+99998,99998,+,-1
+99999,99999,+,-1
+============================================
+
+The .peb file is a csv file with the first two columns indicating the genome positions,
+plus or minus sign indicating the direction of reads, and the population at the position follows.
+The -1 value for the population means it is within the excluded area such as rRNA region.
+In the former file, the population is counted as a sum of both direction of reads, 
+while the following file contains the population of each direction of reads separately.
+
+=============================================
+=== genome_seq.fastq_r36h35i11_fr_match_001.peb === 
+=============================================
+0,0,+,0
+1,1,+,150
+2,2,+,160
+3,3,+,200
+4,4,+,180
+........
+........
+99996,99996,+,-1
+99997,99997,+,-1
+99998,99998,+,-1
+99999,99999,+,-1
+0,0,-,0
+1,1,-,0
+2,2,-,0
+3,3,-,0
+........
+........
+99996,99996,-,-1
+99997,99997,-,-1
+99998,99998,-,-1
+99999,99999,-,-1
+==============================================
+
+
+5. GeF-seq mapping: 
+
+To obtain the plot of population for every 10 base pairs, set the -peb parameter as 10, with an appropreate -pfs value.
+
+Next, map the GeF-seq data on the reference as following.
+% mpsmap -a 8 -i 11 -r 36 -h 35 -map -job r36h35i11 genome.fasta gef_seq.fastq
+Then you will get the hit position files (gef_seq.fastq_r36h35i11.hit, gef_seq.fastq_r36h35i11.bhit) and several other files.
+
+
+6. GeF-seq depth: 
+
+Using the mapped data, generate .peb files with the following command.
+% pmapsr -sr 2 -job r36h35i11 -peb 1 -pfs 100000 -primer -pbo 0 -pbt 2018418 -pbs 0.193873 -np genome.fasta gef_seq.fastq 
+
+This will provides the population files (gef_seq.fastq_r36h35i11_match_###.peb, gefseq_fastq_r36h35i11_fr_match_###.peb).
+as well as the primer edge peak files (gef_seq.fastq_r36h35i11_edge_###.peb, gefseq_fastq_r36h35i11_pos_r_###.peb, geseq_fastq_r36h35i11_neg_r_###.peb),
+
+
+
+
+Typing each command without argument will show some options and usages.
+
+maps programs are distributed "as is", free of charge, and without warranty of any kind.
+We appreciate it if you acknowledge use of maps in any reports or publications.
+
+References:
+
+Onuma Chumsakul et al. 
+"High resolution mapping of in vivo genomic transcription factor binding sites using in situ DNAse footprinting and high throuput sequencing"
+(2013).
+
+K.Nakamura,T.Oshima,T.Morimoto,S.Ikeda,H.Yoshikawa,Y.Shiwa,S.Ishikawa,M.C.Linak,A.Hirai,H.Takahashi,Md.Altaf-Ul-Amin,N.Ogasawara and S.Kanaya,
+"Sequence-specific error profile of Illumina sequencers",
+Nucleic Acids Research, 39, (2011) Pp. e90.
+
+Copyright 2012. Kensuke Nakamura, All rights reserved.
